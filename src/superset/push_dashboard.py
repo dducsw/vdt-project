@@ -420,7 +420,8 @@ def main():
     base_dir  = os.path.dirname(os.path.abspath(__file__))
     build_dir = os.path.join(base_dir, "dashboard_build")
 
-    # 1. Clean build dir     if os.path.exists(build_dir):
+    # 1. Clean build dir
+    if os.path.exists(build_dir):
         shutil.rmtree(build_dir)
     for sub in ["databases", "datasets/Doris", "charts", "dashboards"]:
         os.makedirs(os.path.join(build_dir, sub), exist_ok=True)

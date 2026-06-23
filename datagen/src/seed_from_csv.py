@@ -1,5 +1,9 @@
 import os
 import sys
+
+# Add the datagen directory to path to import 'src'
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import argparse
 import pandas as pd
 from sqlalchemy import create_engine, text
@@ -44,6 +48,22 @@ def seed_data(args):
     )
     engine = create_engine(connection_url)
 
+    # 0. Initialize tables if they don't exist
+    from src.db_writer import DataWriter
+    writer = DataWriter(
+        user=args.user,
+        password=args.password,
+        host=args.host,
+        db_name=args.database,
+        schema=args.schema,
+        port=args.port
+    )
+    try:
+        logger.info("Ensuring PostgreSQL tables exist...")
+        writer.create_tables_if_not_exists()
+    finally:
+        writer.close()
+
     # File to Table mapping
     files = [f for f in os.listdir(args.data_dir) if f.endswith('.csv')]
     
@@ -72,7 +92,14 @@ def seed_data(args):
             with conn.begin():
                 tables = ["events", "order_items", "inventory_items", "orders", "products", "users", "distribution_centers"]
                 for table in tables:
-                    conn.execute(text(f"TRUNCATE TABLE {args.schema}.{table} CASCADE;"))
+                    check_query = text(
+                        "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = :schema AND table_name = :table)"
+                    )
+                    table_exists = conn.execute(check_query, {"schema": args.schema, "table": table}).scalar()
+                    if table_exists:
+                        conn.execute(text(f"TRUNCATE TABLE {args.schema}.{table} CASCADE;"))
+                    else:
+                        logger.info(f"Table '{args.schema}.{table}' does not exist, skipping truncate.")
             logger.info("Truncation complete.")
 
     # 2. Load data from CSVs

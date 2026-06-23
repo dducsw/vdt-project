@@ -112,6 +112,12 @@ def main():
     
     spark = SparkSession.builder \
         .appName("TheLook-Clickstream-Pipeline") \
+        .config("spark.executor.memory", "1g") \
+        .config("spark.driver.memory", "1g") \
+        .config("spark.executor.cores", "1") \
+        .config("spark.cores.max", "4") \
+        .config("spark.sql.shuffle.partitions", "8") \
+        .config("spark.default.parallelism", "4") \
         .getOrCreate()
         
     # Dynamically distribute doris_utils.py and schemas.py to all worker tasks

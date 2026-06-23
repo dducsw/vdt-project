@@ -28,6 +28,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./datagen/src/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: ["postgres", "-c", "wal_level=logical"]
     networks:
       - ods-streaming
 

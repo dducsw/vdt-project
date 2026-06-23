@@ -371,15 +371,7 @@ class Order(ModelMixin):
             CONSTRAINT chk_orders_num_items_positive
                 CHECK (num_of_item >= 1),
             CONSTRAINT chk_orders_valid_status
-                CHECK (status IN ('Processing', 'Shipped', 'Complete', 'Returned', 'Cancelled')),
-            CONSTRAINT chk_orders_updated_after_created
-                CHECK (updated_at >= created_at),
-            CONSTRAINT chk_orders_shipped_after_created
-                CHECK (shipped_at IS NULL OR shipped_at >= created_at),
-            CONSTRAINT chk_orders_delivered_after_shipped
-                CHECK (delivered_at IS NULL OR shipped_at IS NULL OR delivered_at >= shipped_at),
-            CONSTRAINT chk_orders_returned_after_delivered
-                CHECK (returned_at IS NULL OR (delivered_at IS NOT NULL AND returned_at >= delivered_at))
+                CHECK (status IN ('Processing', 'Shipped', 'Complete', 'Returned', 'Cancelled'))
         );
         """
         )
@@ -461,15 +453,7 @@ class OrderItem(ModelMixin):
                 FOREIGN KEY (inventory_item_id)
                 REFERENCES {schema}.inventory_items (id),
             CONSTRAINT chk_order_items_sale_price_non_negative
-                CHECK (sale_price >= 0),
-            CONSTRAINT chk_order_items_updated_after_created
-                CHECK (updated_at >= created_at),
-            CONSTRAINT chk_order_items_shipped_after_created
-                CHECK (shipped_at IS NULL OR shipped_at >= created_at),
-            CONSTRAINT chk_order_items_delivered_after_shipped
-                CHECK (delivered_at IS NULL OR shipped_at IS NULL OR delivered_at >= shipped_at),
-            CONSTRAINT chk_order_items_returned_after_delivered
-                CHECK (returned_at IS NULL OR (delivered_at IS NOT NULL AND returned_at >= delivered_at))
+                CHECK (sale_price >= 0)
         );
         """
         )

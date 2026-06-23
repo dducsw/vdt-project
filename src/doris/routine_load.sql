@@ -15,7 +15,7 @@ PROPERTIES(
     "jsonpaths" = "[\"$.payload.after.id\", \"$.payload.before.id\", \"$.payload.after.name\", \"$.payload.after.latitude\", \"$.payload.after.longitude\", \"$.payload.op\"]",
     "desired_concurrent_number" = "1",
     "max_batch_interval" = "5",
-    "max_batch_rows" = "100000",
+    "max_batch_rows" = "300000",
     "max_error_number" = "100"
 )
 FROM KAFKA(
@@ -37,7 +37,7 @@ PROPERTIES(
     "jsonpaths" = "[\"$.payload.after.id\", \"$.payload.before.id\", \"$.payload.after.cost\", \"$.payload.after.category\", \"$.payload.after.name\", \"$.payload.after.brand\", \"$.payload.after.retail_price\", \"$.payload.after.department\", \"$.payload.after.sku\", \"$.payload.after.distribution_center_id\", \"$.payload.op\"]",
     "desired_concurrent_number" = "1",
     "max_batch_interval" = "5",
-    "max_batch_rows" = "100000",
+    "max_batch_rows" = "300000",
     "max_error_number" = "100"
 )
 FROM KAFKA(
@@ -61,7 +61,7 @@ PROPERTIES(
     "jsonpaths" = "[\"$.payload.after.id\", \"$.payload.before.id\", \"$.payload.after.first_name\", \"$.payload.after.last_name\", \"$.payload.after.email\", \"$.payload.after.age\", \"$.payload.after.gender\", \"$.payload.after.street_address\", \"$.payload.after.postal_code\", \"$.payload.after.city\", \"$.payload.after.state\", \"$.payload.after.country\", \"$.payload.after.latitude\", \"$.payload.after.longitude\", \"$.payload.after.traffic_source\", \"$.payload.after.created_at\", \"$.payload.after.updated_at\", \"$.payload.op\"]",
     "desired_concurrent_number" = "1",
     "max_batch_interval" = "5",
-    "max_batch_rows" = "100000",
+    "max_batch_rows" = "300000",
     "max_error_number" = "100"
 )
 FROM KAFKA(
@@ -85,7 +85,7 @@ PROPERTIES(
     "jsonpaths" = "[\"$.payload.after.id\", \"$.payload.before.id\", \"$.payload.after.product_id\", \"$.payload.after.created_at\", \"$.payload.after.sold_at\", \"$.payload.after.cost\", \"$.payload.after.product_category\", \"$.payload.after.product_name\", \"$.payload.after.product_brand\", \"$.payload.after.product_retail_price\", \"$.payload.after.product_department\", \"$.payload.after.product_sku\", \"$.payload.after.product_distribution_center_id\", \"$.payload.op\"]",
     "desired_concurrent_number" = "1",
     "max_batch_interval" = "5",
-    "max_batch_rows" = "100000",
+    "max_batch_rows" = "300000",
     "max_error_number" = "100"
 )
 FROM KAFKA(
@@ -112,7 +112,7 @@ PROPERTIES(
     "jsonpaths" = "[\"$.payload.after.order_id\", \"$.payload.before.order_id\", \"$.payload.after.user_id\", \"$.payload.after.status\", \"$.payload.after.gender\", \"$.payload.after.created_at\", \"$.payload.after.updated_at\", \"$.payload.after.returned_at\", \"$.payload.after.shipped_at\", \"$.payload.after.delivered_at\", \"$.payload.after.num_of_item\", \"$.payload.op\"]",
     "desired_concurrent_number" = "1",
     "max_batch_interval" = "5",
-    "max_batch_rows" = "100000",
+    "max_batch_rows" = "300000",
     "max_error_number" = "100"
 )
 FROM KAFKA(
@@ -139,7 +139,7 @@ PROPERTIES(
     "jsonpaths" = "[\"$.payload.after.id\", \"$.payload.before.id\", \"$.payload.after.order_id\", \"$.payload.after.user_id\", \"$.payload.after.product_id\", \"$.payload.after.inventory_item_id\", \"$.payload.after.status\", \"$.payload.after.created_at\", \"$.payload.after.updated_at\", \"$.payload.after.shipped_at\", \"$.payload.after.delivered_at\", \"$.payload.after.returned_at\", \"$.payload.after.sale_price\", \"$.payload.op\"]",
     "desired_concurrent_number" = "1",
     "max_batch_interval" = "5",
-    "max_batch_rows" = "100000",
+    "max_batch_rows" = "300000",
     "max_error_number" = "100"
 )
 FROM KAFKA(

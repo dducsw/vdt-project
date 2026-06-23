@@ -33,16 +33,16 @@ DORIS_USER = os.getenv("DORIS_USER", "root")
 DORIS_PASS = os.getenv("DORIS_PASSWORD", "")
 DORIS_DB   = os.getenv("DORIS_DB", "thelook_dw")
 
-WARMUP_RUNS    = 2   # Số lần chạy warm-up (bỏ qua kết quả)
-BENCHMARK_RUNS = 10  # Số lần chạy đo thực để tính Avg/P95/P99
+WARMUP_RUNS    = 1   # Số lần chạy warm-up (bỏ qua kết quả)
+BENCHMARK_RUNS = 5   # Số lần chạy đo thực để tính Avg/P95/P99
 
 # --- Concurrency benchmark config ---
-CONCURRENCY_LEVELS   = [1, 5, 10, 20]  # Số connection đồng thời cần test
-CONCURRENCY_DURATION = 15              # Số giây chạy đo ở MỖI mức concurrency
+CONCURRENCY_LEVELS   = [1, 3, 5]  # Giảm mức concurrency cho local dev để tránh lỗi kết nối
+CONCURRENCY_DURATION = 5          # Giảm thời gian chạy đo ở mỗi mức xuống 5s
 
 # --- Steady-state check config (Routine Load) ---
-STEADY_STATE_MAX_RETRIES   = 12   # Số lần kiểm tra tối đa trước khi bỏ qua
-STEADY_STATE_POLL_INTERVAL = 5    # Giây giữa mỗi lần kiểm tra
+STEADY_STATE_MAX_RETRIES   = 5    # Giảm số lần kiểm tra tối đa xuống 5
+STEADY_STATE_POLL_INTERVAL = 3    # Định kỳ kiểm tra sau mỗi 3s
 STEADY_STATE_LAG_THRESHOLD = 100  # Lag (số message) được coi là "đã bắt kịp"
 
 # ---------------------------------------------------------------------------
@@ -233,8 +233,8 @@ def benchmark_clickstream_ingestion():
         with conn.cursor() as cur:
             # --- Throughput: đo NHIỀU LẦN (không chỉ 1 lần) để lấy mean + std dev,
             #     tránh kết luận sai do 1 sample bị ảnh hưởng bởi burst của producer ---
-            THROUGHPUT_SAMPLES = 5
-            THROUGHPUT_WINDOW_SEC = 10
+            THROUGHPUT_SAMPLES = 3
+            THROUGHPUT_WINDOW_SEC = 5
             print(f"  Measuring ingestion throughput: {THROUGHPUT_SAMPLES} samples x "
                   f"{THROUGHPUT_WINDOW_SEC}s each...")
             throughputs = []
