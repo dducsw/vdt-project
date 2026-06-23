@@ -1,0 +1,27 @@
+[build]
+command = "uvicorn stream_app:app --host 0.0.0.0 --port 8000"
+
+[build.env]
+PYTHON_VERSION = "3.12"
+
+[deploy]
+startCommand = "uvicorn stream_app:app --host 0.0.0.0 --port 8000"
+
+[env]
+PORT = "8000"
+HOST = "0.0.0.0"
+DEBUG = "true"
+
+[[services]]
+name = "datagen-api"
+service_type = "web"
+
+[services.ports]
+http = 8000
+
+[services.health_checks]
+[services.health_checks.http]
+path = "/health"
+timeout = 30
+interval = 60
+grace_period = 10

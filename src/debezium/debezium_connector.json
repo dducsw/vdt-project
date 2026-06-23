@@ -1,0 +1,18 @@
+{
+    "name": "thelook-postgres-connector",
+    "config": {
+        "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+        "tasks.max": "1",
+        "plugin.name": "pgoutput",
+        "database.hostname": "postgres",
+        "database.port": "5432",
+        "database.user": "db_user",
+        "database.password": "db_password",
+        "database.dbname": "thelook_db",
+        "topic.prefix": "cdc",
+        "table.include.list": "demo.users,demo.products,demo.orders,demo.order_items,demo.inventory_items,demo.distribution_centers",
+        "decimal.handling.mode": "double",
+        "tombstones.on.delete": "true",
+        "snapshot.mode": "initial"
+    }
+}

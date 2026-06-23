@@ -1,0 +1,73 @@
+param(
+    [Parameter(Mandatory=$false)]
+    [ValidateSet("seed-snapshot", "gendata", "resume-gendata", "gendata-once", "reset-seed-gendata", "full-load-gcs", "gen-events")]
+    [string]$Action = "seed-snapshot",
+
+    [string]$PG_HOST = "localhost",
+    [int]$PG_PORT = 5434,
+    [string]$PG_DB = "thelook_db",
+    [string]$PG_USER = "db_user",
+    [string]$PG_PASSWORD = "db_password",
+    [string]$PG_SCHEMA = "demo",
+    [int]$YEAR_SHIFT = 4,
+    [switch]$IncludeEvents = $false,
+    [string]$PYTHON = "python",
+
+    # Cấu hình cho Clickstream Pub/Sub
+    [string]$GCP_PROJECT = $env:GCP_PROJECT_ID,
+    [string]$TOPIC = "clickstream_topic",
+    [float]$AVG_QPS = 12.0
+)
+
+Write-Host "`n--- TheLook Data Management ($Action) ---" -ForegroundColor Cyan
+
+$SkipEventsFlag = if ($IncludeEvents) { "" } else { "--skip-events" }
+
+switch ($Action) {
+    "seed-snapshot" {
+        Write-Host " Running Seed from CSV with Time Shift..." -ForegroundColor Yellow
+        if (-not $IncludeEvents) { Write-Host " (Skipping events table to save time)" -ForegroundColor Gray }
+        & $PYTHON src/seed_from_csv.py --host $PG_HOST --port $PG_PORT --database $PG_DB --user $PG_USER --password $PG_PASSWORD --schema $PG_SCHEMA --data-dir ./data --truncate-first --year-shift $YEAR_SHIFT $SkipEventsFlag
+    }
+
+    "reset-seed-gendata" {
+        Write-Host " Resetting Data and Starting Generator..." -ForegroundColor Yellow
+        Write-Host " Step 1: Seeding CSV..." -ForegroundColor Gray
+        if (-not $IncludeEvents) { Write-Host " (Skipping events table to save time)" -ForegroundColor Gray }
+        & $PYTHON src/seed_from_csv.py --host $PG_HOST --port $PG_PORT --database $PG_DB --user $PG_USER --password $PG_PASSWORD --schema $PG_SCHEMA --data-dir ./data --truncate-first --year-shift $YEAR_SHIFT $SkipEventsFlag
+        
+        Write-Host " Step 2: Starting Generator..." -ForegroundColor Gray
+        & $PYTHON thelook-ecomm/generator.py --db-host $PG_HOST --db-port $PG_PORT --db-user $PG_USER --db-password $PG_PASSWORD --db-name $PG_DB --db-schema $PG_SCHEMA --avg-qps 5 --init-num-users 1000 --max-iter -1
+    }
+
+    "gendata" {
+        Write-Host " Starting Generator (1000 initial users)..." -ForegroundColor Yellow
+        & $PYTHON thelook-ecomm/generator.py --db-host $PG_HOST --db-port $PG_PORT --db-user $PG_USER --db-password $PG_PASSWORD --db-name $PG_DB --db-schema $PG_SCHEMA --avg-qps 5 --init-num-users 1000 --max-iter -1
+    }
+
+    "resume-gendata" {
+        Write-Host " Resuming Generator (0 initial users)..." -ForegroundColor Yellow
+        & $PYTHON thelook-ecomm/generator.py --db-host $PG_HOST --db-port $PG_PORT --db-user $PG_USER --db-password $PG_PASSWORD --db-name $PG_DB --db-schema $PG_SCHEMA --avg-qps 5 --init-num-users 0 --max-iter -1
+    }
+
+    "gendata-once" {
+        Write-Host " Running Generator for 100 iterations..." -ForegroundColor Yellow
+        & $PYTHON thelook-ecomm/generator.py --db-host $PG_HOST --db-port $PG_PORT --db-user $PG_USER --db-password $PG_PASSWORD --db-name $PG_DB --db-schema $PG_SCHEMA --avg-qps 5 --init-num-users 0 --max-iter 100
+    }
+
+    "full-load-gcs" {
+        Write-Host " Running Full Load to GCS..." -ForegroundColor Yellow
+        & $PYTHON ../src/etl/local_pg_to_gcs.py --pg-host $PG_HOST --pg-port $PG_PORT --pg-database $PG_DB --pg-user $PG_USER --pg-password $PG_PASSWORD --pg-schema $PG_SCHEMA
+    }
+
+    "gen-events" {
+        Write-Host " Starting Events-Only Generator..." -ForegroundColor Yellow
+        $PubSubArgs = if ($GCP_PROJECT) { "--publish-clickstream", "--gcp-project-id", $GCP_PROJECT, "--clickstream-topic", $TOPIC } else { @() }
+        & $PYTHON thelook-ecomm/generate_events_only.py `
+            --db-host $PG_HOST --db-port $PG_PORT --db-user $PG_USER --db-password $PG_PASSWORD --db-name $PG_DB --db-schema $PG_SCHEMA `
+            --avg-qps $AVG_QPS `
+            $PubSubArgs
+    }
+}
+
+Write-Host "`n Operation $Action completed." -ForegroundColor Green

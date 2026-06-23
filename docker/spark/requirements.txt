@@ -1,0 +1,8 @@
+ipython
+pandas
+pyarrow
+numpy
+pyspark==3.5.6
+confluent-kafka
+python-dotenv
+jupyterlab

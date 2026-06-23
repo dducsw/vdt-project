@@ -1,0 +1,411 @@
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-mysql123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-mysql_db}
+      MYSQL_USER: ${MYSQL_USER:-mysql}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-mysql123}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - ods-streaming
+
+  # PostgreSQL 16 Database
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-db_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-db_password}
+      POSTGRES_DB: ${POSTGRES_DB:-thelook_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./datagen/src/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - ods-streaming
+
+  # Datagen Clickstream Producer
+  datagen:
+    build: ./datagen
+    container_name: datagen
+    depends_on:
+      - kafka-broker-1
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka-broker-1:29092}
+      - KAFKA_EVENTS_TOPIC=${KAFKA_EVENTS_TOPIC:-clickstream-events}
+      - KAFKA_USERS_TOPIC=${KAFKA_USERS_TOPIC:-new-users}
+      - PUBLISH_RATE_HZ=10
+    command: ["python", "kafka_producer.py"]
+    networks:
+      - ods-streaming
+
+  # Debezium Connector
+  debezium:
+    image: quay.io/debezium/connect:latest
+    container_name: debezium
+    ports:
+      - "8083:8083"
+    depends_on:
+      - kafka-broker-1
+      - postgres
+    environment:
+      - BOOTSTRAP_SERVERS=${DEBEZIUM_BOOTSTRAP_SERVERS:-kafka-broker-1:29092,kafka-broker-2:29094}
+      - GROUP_ID=1
+      - CONFIG_STORAGE_TOPIC=my_connect_configs
+      - OFFSET_STORAGE_TOPIC=my_connect_offsets
+      - STATUS_STORAGE_TOPIC=my_connect_statuses
+      - CONFIG_STORAGE_REPLICATION_FACTOR=1
+      - OFFSET_STORAGE_REPLICATION_FACTOR=1
+      - STATUS_STORAGE_REPLICATION_FACTOR=1
+      - KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+      - VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+      - KEY_CONVERTER_SCHEMAS_ENABLE=false
+      - VALUE_CONVERTER_SCHEMAS_ENABLE=false
+    networks:
+      - ods-streaming
+
+
+  # Kafka with KRaft (Controller)
+  kafka-controller:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: kafka-controller
+    user: "0:0"
+    ports:
+      - "9093:9093"
+    environment:
+      CLUSTER_ID: "2s0ES2gBSHGzDZOiZn54qg"    
+      KAFKA_CLUSTER_ID: "2s0ES2gBSHGzDZOiZn54qg"
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT'
+      KAFKA_LISTENERS: 'CONTROLLER://kafka-controller:9093'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka-controller:9093'
+      KAFKA_PROCESS_ROLES: 'controller'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+    volumes:
+      - kafka_controller_data:/tmp/kraft-combined-logs
+    networks:
+      - ods-streaming
+
+  # Kafka Broker 1
+  kafka-broker-1:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: kafka-broker-1
+    user: "0:0"
+    ports:
+      - "9092:9092"
+    depends_on:
+      - kafka-controller
+    environment:
+      CLUSTER_ID: "2s0ES2gBSHGzDZOiZn54qg"    
+      KAFKA_CLUSTER_ID: "2s0ES2gBSHGzDZOiZn54qg"
+      KAFKA_NODE_ID: 2
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT'
+      KAFKA_LISTENERS: 'PLAINTEXT://kafka-broker-1:29092,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka-broker-1:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka-controller:9093'
+      KAFKA_PROCESS_ROLES: 'broker'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+    volumes:
+      - kafka_broker1_data:/tmp/kraft-combined-logs
+    networks:
+      - ods-streaming
+
+  # Kafka Broker 2
+  kafka-broker-2:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: kafka-broker-2
+    user: "0:0"
+    ports:
+      - "9094:9094"
+    depends_on:
+      - kafka-controller
+    environment:
+      CLUSTER_ID: "2s0ES2gBSHGzDZOiZn54qg"    
+      KAFKA_CLUSTER_ID: "2s0ES2gBSHGzDZOiZn54qg"
+      KAFKA_NODE_ID: 3
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT'
+      KAFKA_LISTENERS: 'PLAINTEXT://kafka-broker-2:29094,PLAINTEXT_HOST://0.0.0.0:9094'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka-broker-2:29094,PLAINTEXT_HOST://localhost:9094'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka-controller:9093'
+      KAFKA_PROCESS_ROLES: 'broker'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+    volumes:
+      - kafka_broker2_data:/tmp/kraft-combined-logs
+    networks:
+      - ods-streaming
+
+  # Kafka UI 
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "8888:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-broker-1:29092
+    networks:
+      - ods-streaming
+
+
+  # Spark Master
+  spark-master:
+    build:
+      context: ./docker/spark
+      args:
+        PYTHON_VERSION: "3.11"
+        SPARK_VERSION: "3.5.6"
+        SPARK_SCALA_VERSION: "2.12"
+        POSTGRESQL_JAR_VERSION: "42.7.3"
+        MYSQL_JDBC_VERSION: "8.3.0"
+        KAFKA_VERSION: "3.7.0"
+        SPARK_KAFKA_VERSION: "3.5.6"
+    container_name: spark-master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+      - SPARK_JARS_PACKAGES=com.mysql:mysql-connector-j:8.3.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.6,org.apache.kafka:kafka-clients:3.7.0,org.apache.doris:spark-doris-connector-spark-3.5:25.1.0
+      - DORIS_USER=${DORIS_USER:-root}
+      - DORIS_PASSWORD=${DORIS_PASSWORD:-}
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka-broker-1:29092}
+      - SPARK_CHECKPOINT_DIR=${SPARK_CHECKPOINT_DIR:-/opt/spark/data/checkpoints}
+    volumes:
+      - ./data:/opt/spark/data
+      - ./docker/spark/spark-defaults.conf:/root/spark/conf/spark-defaults.conf
+      - ./src/spark:/opt/spark/scripts
+    networks:
+      - ods-streaming
+
+  # Spark Worker 1
+  spark-worker-1:
+    build:
+      context: ./docker/spark
+      args:
+        PYTHON_VERSION: "3.11"
+        SPARK_VERSION: "3.5.6"
+        SPARK_SCALA_VERSION: "2.12"
+        POSTGRESQL_JAR_VERSION: "42.7.3"
+        MYSQL_JDBC_VERSION: "8.3.0"
+        KAFKA_VERSION: "3.7.0"
+        SPARK_KAFKA_VERSION: "3.5.6"
+    container_name: spark-worker-1
+    ports:
+      - "8081:8081"
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_WEBUI_PORT=8081
+      - SPARK_WORKER_MEMORY=2g
+      - SPARK_WORKER_CORES=2
+      - SPARK_JARS_PACKAGES=com.mysql:mysql-connector-j:8.3.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.6,org.apache.kafka:kafka-clients:3.7.0,org.apache.doris:spark-doris-connector-spark-3.5:25.1.0
+      - DORIS_USER=${DORIS_USER:-root}
+      - DORIS_PASSWORD=${DORIS_PASSWORD:-}
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka-broker-1:29092}
+      - SPARK_CHECKPOINT_DIR=${SPARK_CHECKPOINT_DIR:-/opt/spark/data/checkpoints}
+    volumes:
+      - ./data:/opt/spark/data
+      - ./docker/spark/spark-defaults.conf:/root/spark/conf/spark-defaults.conf
+      - ./src/spark:/opt/spark/scripts
+    networks:
+      - ods-streaming
+
+  # Spark Worker 2
+  spark-worker-2:
+    build:
+      context: ./docker/spark
+      args:
+        PYTHON_VERSION: "3.11"
+        SPARK_VERSION: "3.5.6"
+        SPARK_SCALA_VERSION: "2.12"
+        POSTGRESQL_JAR_VERSION: "42.7.3"
+        MYSQL_JDBC_VERSION: "8.3.0"
+        KAFKA_VERSION: "3.7.0"
+        SPARK_KAFKA_VERSION: "3.5.6"
+    container_name: spark-worker-2
+    ports:
+      - "8082:8082"
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_WEBUI_PORT=8082
+      - SPARK_WORKER_MEMORY=2g
+      - SPARK_WORKER_CORES=2
+      - SPARK_JARS_PACKAGES=com.mysql:mysql-connector-j:8.3.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.6,org.apache.kafka:kafka-clients:3.7.0,org.apache.doris:spark-doris-connector-spark-3.5:25.1.0
+      - DORIS_USER=${DORIS_USER:-root}
+      - DORIS_PASSWORD=${DORIS_PASSWORD:-}
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka-broker-1:29092}
+      - SPARK_CHECKPOINT_DIR=${SPARK_CHECKPOINT_DIR:-/opt/spark/data/checkpoints}
+    volumes:
+      - ./data:/opt/spark/data
+      - ./docker/spark/spark-defaults.conf:/root/spark/conf/spark-defaults.conf
+      - ./src/spark:/opt/spark/scripts
+    networks:
+      - ods-streaming
+
+
+  doris-fe:
+    image: apache/doris:fe-4.1.1
+    container_name: doris-fe
+    hostname: doris-fe
+    ports:
+      - "8030:8030"   # FE HTTP
+      - "9030:9030"   # FE MySQL
+      - "9010:9010"   # FE Internal
+    environment:
+      FE_SERVERS: fe1:172.20.0.20:9010
+      FE_ID: 1
+    volumes:
+      - doris_fe_data:/opt/apache-doris/fe/doris-meta
+      - ./docker/doris/fe.conf:/opt/apache-doris/fe/conf/fe.conf
+    networks:
+      ods-streaming:
+        ipv4_address: 172.20.0.20
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8030"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  doris-be:
+    image: apache/doris:be-4.1.1
+    container_name: doris-be
+    hostname: doris-be
+    ports:
+      - "8040:8040"   # BE HTTP
+      - "9050:9050"   # BE Internal
+    depends_on:
+      - doris-fe
+    environment:
+      FE_SERVERS: fe1:172.20.0.20:9010
+      BE_ADDR: 172.20.0.21:9050
+      PRIORITY_NETWORKS: 172.20.0.0/16
+    volumes:
+      - doris_be_data:/opt/apache-doris/be/storage
+      - ./docker/doris/be.conf:/opt/apache-doris/be/conf/be.conf
+    networks:
+      ods-streaming:
+        ipv4_address: 172.20.0.21
+
+  doris-be-2:
+    image: apache/doris:be-4.1.1
+    container_name: doris-be-2
+    hostname: doris-be-2
+    ports:
+      - "8041:8040"   # BE HTTP
+      - "9051:9050"   # BE Internal
+    depends_on:
+      - doris-fe
+    environment:
+      FE_SERVERS: fe1:172.20.0.20:9010
+      BE_ADDR: 172.20.0.22:9050
+      PRIORITY_NETWORKS: 172.20.0.0/16
+    volumes:
+      - doris_be_data_2:/opt/apache-doris/be/storage
+      - ./docker/doris/be.conf:/opt/apache-doris/be/conf/be.conf
+    networks:
+      ods-streaming:
+        ipv4_address: 172.20.0.22
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - ods-streaming
+
+  # Apache Superset
+  superset:
+    build:
+      context: ./docker/superset
+      dockerfile: Dockerfile
+    container_name: superset
+    ports:
+      - "8088:8088"
+    environment:
+      - SUPERSET_SECRET_KEY=yoursecretkey_changeme
+    volumes:
+      - superset_data:/app/superset_home
+      - ./docker/superset/init.sh:/app/init.sh
+    command: ["/bin/bash", "/app/init.sh"]
+    networks:
+      - ods-streaming
+
+  # Kafka Exporter for monitoring consumer lag
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:latest
+    container_name: kafka-exporter
+    restart: always
+    command: ["--kafka.server=kafka-broker-1:29092"]
+    ports:
+      - "9308:9308"
+    networks:
+      - ods-streaming
+
+  # Prometheus monitoring server
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    depends_on:
+      - kafka-exporter
+      - doris-fe
+      - doris-be
+    networks:
+      - ods-streaming
+
+volumes:
+  postgres_data:
+  kafka_controller_data:
+  kafka_broker1_data:
+  kafka_broker2_data:
+  mysql_data:
+  doris_fe_data:
+  doris_be_data:
+  doris_be_data_2:
+  superset_data:
+
+networks:
+  ods-streaming:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+

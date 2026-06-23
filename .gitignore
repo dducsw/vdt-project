@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.toast
+.unregistered
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.eggs/
+
+# Spark / Data
+data/checkpoints/
+data/spark-warehouse/
+*.log
+
+# Docker & Services local temp data
+.docker/
+docker/grafana/data/
+docker/prometheus/data/
+
+# Superset Dashboard Build
+src/superset/dashboard_build/
+src/superset/dashboard_assets.zip
+
+# Environment Variables
+.env
+.env*.local
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+dashboard
+
+# CSV Data Files
+*.csv
+datagen/data/
+datagen/src/data/
