@@ -34,7 +34,7 @@ Run the generator easily using predefined `make` commands:
 Run the script manually to customize generation parameters, such as QPS and database credentials:
 
 ```bash
-python thelook-ecomm/generator.py \
+python generator.py \
   --db-host localhost \
   --db-port 5433 \
   --db-user db_user \

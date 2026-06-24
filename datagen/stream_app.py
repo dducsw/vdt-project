@@ -39,6 +39,27 @@ DB_USER = settings.pg_user
 DB_PASSWORD = settings.pg_password
 DB_SCHEMA = settings.pg_schema
 
+# ---------------------------------------------------------------------------
+# Kafka Producer (initialized once at startup — production pattern)
+# ---------------------------------------------------------------------------
+_kafka_producer = None
+
+def get_kafka_producer():
+    """Returns the singleton Kafka producer, initializing if needed."""
+    global _kafka_producer
+    if _kafka_producer is None:
+        from confluent_kafka import Producer
+        kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka-broker-1:29092")
+        _kafka_producer = Producer({
+            "bootstrap.servers": kafka_servers,
+            "client.id": "bff-producer",
+            # Linger to batch small messages — reduces overhead without adding perceptible latency
+            "linger.ms": 5,
+            "batch.num.messages": 100,
+        })
+    return _kafka_producer
+
+
 def load_users():
     """Initializes user cache by loading from DB or generating them on-the-fly."""
     global users_cache
@@ -69,16 +90,64 @@ def load_users():
 @app.on_event("startup")
 async def startup_event():
     load_users()
+    # Pre-warm Kafka producer connection
+    try:
+        get_kafka_producer()
+        print("Kafka producer initialized successfully.")
+    except Exception as e:
+        print(f"Warning: Could not initialize Kafka producer at startup: {e}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Flush any pending Kafka messages before shutdown."""
+    global _kafka_producer
+    if _kafka_producer is not None:
+        _kafka_producer.flush(timeout=10)
+        print("Kafka producer flushed on shutdown.")
+
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
+
+def serialize_item(item) -> str:
+    """Converts a model dataclass instance to a clean JSON string."""
+    data = item if isinstance(item, dict) else item.__dict__.copy()
+    # Remove SQLAlchemy specific state tracking if present
+    data.pop("_sa_instance_state", None)
+    # Serialize datetime instances to ISO string format
+    for k, v in data.items():
+        if isinstance(v, datetime):
+            data[k] = v.isoformat()
+    return json.dumps(data)
+
+
+def _kafka_publish(topic: str, key: str, payload: dict) -> None:
+    """Publish a single JSON payload to the given Kafka topic (fire-and-forget)."""
+    producer = get_kafka_producer()
+    producer.produce(
+        topic,
+        key=key.encode("utf-8"),
+        value=json.dumps(payload).encode("utf-8"),
+    )
+    # Non-blocking poll to trigger delivery callbacks without stalling the request
+    producer.poll(0)
+
+# ---------------------------------------------------------------------------
+# Utility & Health endpoints
+# ---------------------------------------------------------------------------
 
 @app.get("/")
 async def root():
     return {
-        "message": "TheLook eCommerce Streaming API",
+        "message": "TheLook eCommerce BFF — Clickstream Ingestion Gateway",
+        "role": "BFF (Backend-For-Frontend): accepts HTTP events from simulators/clients and forwards to Kafka",
         "endpoints": [
-            "/stream/events",
-            "/stream/users",
-            "/health",
-            "/metrics"
+            "POST /events/ingest   — ingest a batch of clickstream events (JSON array)",
+            "POST /users/ingest    — ingest a batch of user registration events (JSON array)",
+            "GET  /stream/events  — SSE/NDJSON stream of generated events (demo/testing)",
+            "GET  /stream/users   — SSE/NDJSON stream of generated users (demo/testing)",
+            "GET  /health         — health check",
+            "GET  /metrics        — runtime metrics",
         ]
     }
 
@@ -93,16 +162,90 @@ async def metrics():
         "timestamp": datetime.utcnow().isoformat()
     }
 
-def serialize_item(item) -> str:
-    """Converts a model dataclass instance to a clean JSON string."""
-    data = item if isinstance(item, dict) else item.__dict__.copy()
-    # Remove SQLAlchemy specific state tracking if present
-    data.pop("_sa_instance_state", None)
-    # Serialize datetime instances to ISO string format
-    for k, v in data.items():
-        if isinstance(v, datetime):
-            data[k] = v.isoformat()
-    return json.dumps(data)
+# ---------------------------------------------------------------------------
+# BFF Ingestion endpoints  (the "production-realistic" path)
+# ---------------------------------------------------------------------------
+
+@app.post("/events/ingest", status_code=202)
+async def ingest_events(events: List[dict]):
+    """
+    BFF ingestion endpoint for clickstream events.
+
+    Simulates the role of an API Gateway / BFF service in production:
+      - Client (browser, mobile app, simulator) sends events via HTTPS POST.
+      - BFF validates schema minimally, then forwards each event to Kafka.
+      - Client never touches Kafka directly (no direct TCP to broker).
+
+    Accepts a JSON array of event objects. Returns 202 Accepted immediately
+    after enqueueing to Kafka (fire-and-forget delivery semantics).
+    """
+    if not events:
+        raise HTTPException(status_code=400, detail="Empty event batch.")
+    if len(events) > 5000:
+        raise HTTPException(status_code=400, detail="Batch too large. Maximum 5000 events per request.")
+
+    events_topic = os.getenv("KAFKA_EVENTS_TOPIC", "clickstream-events")
+    failed = 0
+
+    for event in events:
+        # Minimal validation: required fields
+        if not event.get("id") or not event.get("session_id"):
+            failed += 1
+            continue
+
+        # Normalize timestamp
+        if "created_at" not in event or not event["created_at"]:
+            event["created_at"] = datetime.utcnow().isoformat()
+
+        try:
+            _kafka_publish(events_topic, str(event["session_id"]), event)
+        except Exception:
+            failed += 1
+
+    return {
+        "accepted": len(events) - failed,
+        "failed": failed,
+        "topic": events_topic,
+    }
+
+
+@app.post("/users/ingest", status_code=202)
+async def ingest_users(users: List[dict]):
+    """
+    BFF ingestion endpoint for new user registration events.
+
+    Accepts a JSON array of user objects and forwards to the Kafka new-users topic.
+    """
+    if not users:
+        raise HTTPException(status_code=400, detail="Empty user batch.")
+    if len(users) > 1000:
+        raise HTTPException(status_code=400, detail="Batch too large. Maximum 1000 users per request.")
+
+    users_topic = os.getenv("KAFKA_USERS_TOPIC", "new-users")
+    failed = 0
+
+    for user in users:
+        if not user.get("id"):
+            failed += 1
+            continue
+        if "created_at" not in user or not user["created_at"]:
+            user["created_at"] = datetime.utcnow().isoformat()
+            user["updated_at"] = datetime.utcnow().isoformat()
+
+        try:
+            _kafka_publish(users_topic, str(user["id"]), user)
+        except Exception:
+            failed += 1
+
+    return {
+        "accepted": len(users) - failed,
+        "failed": failed,
+        "topic": users_topic,
+    }
+
+# ---------------------------------------------------------------------------
+# GET Streaming endpoints (for demo / testing — generates data on-the-fly)
+# ---------------------------------------------------------------------------
 
 @app.get("/stream/events")
 async def stream_events(

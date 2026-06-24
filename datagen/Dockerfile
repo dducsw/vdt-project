@@ -2,11 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install build dependencies if needed (psycopg2-binary doesn't usually need gcc, but good to have)
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
+# psycopg2-binary is pre-compiled — no gcc or build tools needed.
 # Copy requirements and install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

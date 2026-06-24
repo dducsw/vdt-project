@@ -32,18 +32,42 @@ services:
     networks:
       - ods-streaming
 
-  # Datagen Clickstream Producer
-  datagen:
+  # BFF — Backend-For-Frontend Ingestion Gateway
+  # Nhận events từ client qua HTTP POST và forward vào Kafka.
+  # Đây là tầng bảo vệ giúp client không kết nối TCP trực tiếp vào Kafka Broker.
+  bff:
     build: ./datagen
-    container_name: datagen
+    container_name: bff
+    # Chạy BFF server (FastAPI + Uvicorn)
+    command: ["uvicorn", "stream_app:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"     # Expose HTTP để simulator (và optionally Postman/curl) gọi vào
     depends_on:
       - kafka-broker-1
+      - postgres
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka-broker-1:29092}
       - KAFKA_EVENTS_TOPIC=${KAFKA_EVENTS_TOPIC:-clickstream-events}
       - KAFKA_USERS_TOPIC=${KAFKA_USERS_TOPIC:-new-users}
-      - PUBLISH_RATE_HZ=10
-    command: ["python", "kafka_producer.py"]
+    networks:
+      - ods-streaming
+
+  # Simulator — Client giả lập hành vi người dùng
+  # Sinh events và gửi qua HTTP POST tới BFF, KHÔNG kết nối Kafka trực tiếp.
+  # Mô phỏng đúng hành vi client production (browser, mobile app).
+  simulator:
+    build: ./datagen
+    container_name: simulator
+    # Chạy HTTP client simulator với stdout unbuffered (-u) để log hiện ngay
+    command: ["python", "-u", "http_client.py"]
+    depends_on:
+      - bff
+    environment:
+      - BFF_URL=http://bff:8000
+      - PUBLISH_RATE_HZ=${PUBLISH_RATE_HZ:-10}
+      - BATCH_SIZE=${BATCH_SIZE:-10}
+      - PYTHONUNBUFFERED=1
+      - PYTHONWARNINGS=ignore
     networks:
       - ods-streaming
 

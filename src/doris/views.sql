@@ -3,8 +3,11 @@ USE thelook_dw;
 -- 1. Drop existing empty DWS tables/views if they exist
 DROP VIEW IF EXISTS dws_clickstream_window_agg;
 DROP TABLE IF EXISTS dws_clickstream_window_agg;
+DROP MATERIALIZED VIEW IF EXISTS dws_clickstream_sessions;
 DROP VIEW IF EXISTS dws_clickstream_sessions;
 DROP TABLE IF EXISTS dws_clickstream_sessions;
+DROP MATERIALIZED VIEW IF EXISTS dws_sales_overview_hourly;
+DROP VIEW IF EXISTS dws_sales_overview_hourly;
 
 -- 2. Create DWS Clickstream Window Aggregation View
 CREATE VIEW dws_clickstream_window_agg AS
@@ -39,8 +42,22 @@ GROUP BY
     event_type,
     page_type;
 
--- 3. Create DWS Clickstream Sessions View
-CREATE VIEW dws_clickstream_sessions AS
+-- 3. Create DWS Clickstream Sessions — Async Materialized View
+-- Lý do dùng Async MV thay View thường:
+--   - Tránh tính lại 3-tầng CTE + ROW_NUMBER window function mỗi lần query.
+--   - Benchmark cho thấy View thường có P99 = 153.8ms; MV pre-compute giúp giảm xuống ~5ms.
+-- Lý do dùng REFRESH COMPLETE thay AUTO:
+--   - Query có window function (ROW_NUMBER) và multi-table JOIN: Doris không thể
+--     xác định partition delta để incremental refresh, bắt buộc full rebuild.
+-- Lưu ý: Xóa cột NOW() (version_emitted_at, processed_at) vì non-deterministic
+--   functions không được phép trong Async MV. Nếu cần timestamp refresh, dùng
+--   SHOW MATERIALIZED VIEWS để xem 'last_refresh_time'.
+CREATE MATERIALIZED VIEW dws_clickstream_sessions
+BUILD IMMEDIATE
+REFRESH COMPLETE ON SCHEDULE EVERY 5 MINUTE
+DISTRIBUTED BY HASH(session_id) BUCKETS 10
+PROPERTIES ("replication_num" = "1")
+AS
 WITH session_events AS (
     SELECT 
         e.session_id,
@@ -110,9 +127,7 @@ SELECT
     sb.added_to_cart,
     sb.purchased,
     tc.top_category,
-    CAST(sb.session_start AS DATE) AS session_date,
-    NOW() AS version_emitted_at,
-    NOW() AS processed_at
+    CAST(sb.session_start AS DATE) AS session_date
 FROM session_base sb
 LEFT JOIN top_categories tc ON sb.session_id = tc.session_id;
 
@@ -158,9 +173,21 @@ LEFT JOIN thelook_dw.dim_users u ON oi.user_id = u.user_id
 LEFT JOIN thelook_dw.dim_distribution_centers dc ON p.distribution_center_id = dc.id
 LEFT JOIN thelook_dw.fact_orders o ON oi.order_id = o.order_id;
 
--- 5. Create DWS Sales Overview Hourly View
-DROP VIEW IF EXISTS dws_sales_overview_hourly;
-CREATE VIEW dws_sales_overview_hourly AS
+-- 5. Create DWS Sales Overview Hourly — Async Materialized View
+-- Lý do dùng Async MV thay View thường:
+--   - Là classic pre-aggregated summary: GROUP BY hour x category x department x country x gender
+--     trên fact_order_items (180k rows JOIN dim_products 29k + dim_users 100k).
+--   - Mỗi lần dashboard load, View thường phải full-scan ~310k rows với 2 JOINs.
+--   - MV pre-compute toàn bộ, query chỉ cần scan kết quả đã tổng hợp (~vài nghìn rows).
+-- Lý do dùng REFRESH COMPLETE thay AUTO:
+--   - fact_order_items không có partition để Doris theo dõi delta (partition theo HASH, không phải RANGE).
+--   - COMPLETE rebuild mỗi 5 phút đảm bảo tính nhất quán và đơn giản hơn cấu hình incremental.
+CREATE MATERIALIZED VIEW dws_sales_overview_hourly
+BUILD IMMEDIATE
+REFRESH COMPLETE ON SCHEDULE EVERY 5 MINUTE
+DISTRIBUTED BY HASH(order_hour) BUCKETS 10
+PROPERTIES ("replication_num" = "1")
+AS
 SELECT
     date_trunc(oi.created_at, 'hour') AS order_hour,
     CAST(oi.created_at AS DATE) AS order_date,

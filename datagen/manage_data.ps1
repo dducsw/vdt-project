@@ -37,22 +37,40 @@ switch ($Action) {
         & $PYTHON src/seed_from_csv.py --host $PG_HOST --port $PG_PORT --database $PG_DB --user $PG_USER --password $PG_PASSWORD --schema $PG_SCHEMA --data-dir ./data --truncate-first --year-shift $YEAR_SHIFT $SkipEventsFlag
         
         Write-Host " Step 2: Starting Generator..." -ForegroundColor Gray
-        & $PYTHON thelook-ecomm/generator.py --db-host $PG_HOST --db-port $PG_PORT --db-user $PG_USER --db-password $PG_PASSWORD --db-name $PG_DB --db-schema $PG_SCHEMA --avg-qps 5 --init-num-users 1000 --max-iter -1
+        $env:PG_HOST = $PG_HOST
+        $env:PG_PORT = $PG_PORT
+        $env:PG_DB = $PG_DB
+        $env:PG_USER = $PG_USER
+        $env:PG_PASSWORD = $PG_PASSWORD
+        $env:PG_SCHEMA = $PG_SCHEMA
+        & $PYTHON run_generator.py
     }
 
     "gendata" {
-        Write-Host " Starting Generator (1000 initial users)..." -ForegroundColor Yellow
-        & $PYTHON thelook-ecomm/generator.py --db-host $PG_HOST --db-port $PG_PORT --db-user $PG_USER --db-password $PG_PASSWORD --db-name $PG_DB --db-schema $PG_SCHEMA --avg-qps 5 --init-num-users 1000 --max-iter -1
+        Write-Host " Starting Generator (Auto Seeding if empty)..." -ForegroundColor Yellow
+        $env:PG_HOST = $PG_HOST
+        $env:PG_PORT = $PG_PORT
+        $env:PG_DB = $PG_DB
+        $env:PG_USER = $PG_USER
+        $env:PG_PASSWORD = $PG_PASSWORD
+        $env:PG_SCHEMA = $PG_SCHEMA
+        & $PYTHON run_generator.py
     }
 
     "resume-gendata" {
-        Write-Host " Resuming Generator (0 initial users)..." -ForegroundColor Yellow
-        & $PYTHON thelook-ecomm/generator.py --db-host $PG_HOST --db-port $PG_PORT --db-user $PG_USER --db-password $PG_PASSWORD --db-name $PG_DB --db-schema $PG_SCHEMA --avg-qps 5 --init-num-users 0 --max-iter -1
+        Write-Host " Resuming Generator (Auto Seeding if empty)..." -ForegroundColor Yellow
+        $env:PG_HOST = $PG_HOST
+        $env:PG_PORT = $PG_PORT
+        $env:PG_DB = $PG_DB
+        $env:PG_USER = $PG_USER
+        $env:PG_PASSWORD = $PG_PASSWORD
+        $env:PG_SCHEMA = $PG_SCHEMA
+        & $PYTHON run_generator.py
     }
 
     "gendata-once" {
         Write-Host " Running Generator for 100 iterations..." -ForegroundColor Yellow
-        & $PYTHON thelook-ecomm/generator.py --db-host $PG_HOST --db-port $PG_PORT --db-user $PG_USER --db-password $PG_PASSWORD --db-name $PG_DB --db-schema $PG_SCHEMA --avg-qps 5 --init-num-users 0 --max-iter 100
+        & $PYTHON generator.py --db-host $PG_HOST --db-port $PG_PORT --db-user $PG_USER --db-password $PG_PASSWORD --db-name $PG_DB --db-schema $PG_SCHEMA --avg-qps 5 --init-num-users 0 --max-iter 100
     }
 
     "full-load-gcs" {
@@ -63,7 +81,7 @@ switch ($Action) {
     "gen-events" {
         Write-Host " Starting Events-Only Generator..." -ForegroundColor Yellow
         $PubSubArgs = if ($GCP_PROJECT) { "--publish-clickstream", "--gcp-project-id", $GCP_PROJECT, "--clickstream-topic", $TOPIC } else { @() }
-        & $PYTHON thelook-ecomm/generate_events_only.py `
+        & $PYTHON generate_events_only.py `
             --db-host $PG_HOST --db-port $PG_PORT --db-user $PG_USER --db-password $PG_PASSWORD --db-name $PG_DB --db-schema $PG_SCHEMA `
             --avg-qps $AVG_QPS `
             $PubSubArgs
