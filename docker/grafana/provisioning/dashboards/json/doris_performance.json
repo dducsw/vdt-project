@@ -19,7 +19,8 @@
   "graphTooltip": 0,
   "id": null,
   "links": [],
-  "liveNow": false,
+  "liveNow": true,
+  "refresh": "10s",
   "panels": [
     {
       "collapsed": false,
@@ -30,7 +31,7 @@
         "y": 0
       },
       "id": 1,
-      "title": "Tổng Số Sự Kiện (Clickstream)",
+      "title": "Sự Kiện Trong 1 Giờ Qua",
       "type": "stat",
       "datasource": {
         "type": "mysql",
@@ -43,7 +44,7 @@
             "uid": "Doris"
           },
           "format": "table",
-          "rawSql": "SELECT NOW() as time, COUNT(*) as value FROM thelook_dw.dwd_clickstream_events",
+          "rawSql": "SELECT NOW() as time, COUNT(*) as value FROM thelook_dw.dwd_clickstream_events WHERE event_timestamp >= NOW() - INTERVAL 1 HOUR",
           "refId": "A"
         }
       ],
@@ -89,7 +90,7 @@
         "y": 0
       },
       "id": 2,
-      "title": "Độ Trễ End-to-End Trung Bình (Giây)",
+      "title": "Độ Trễ E2E Trung Bình - 5 Phút Gần Nhất (Giây)",
       "type": "stat",
       "datasource": {
         "type": "mysql",
@@ -102,7 +103,7 @@
             "uid": "Doris"
           },
           "format": "table",
-          "rawSql": "SELECT NOW() as time, COALESCE(AVG(event_lag_seconds), 0) as value FROM thelook_dw.dwd_clickstream_events",
+          "rawSql": "SELECT NOW() as time, COALESCE(AVG(event_lag_seconds), 0) as value FROM thelook_dw.dwd_clickstream_events WHERE event_timestamp >= NOW() - INTERVAL 5 MINUTE",
           "refId": "A"
         }
       ],

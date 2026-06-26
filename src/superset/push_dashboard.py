@@ -159,14 +159,14 @@ def gen_dataset(key):
         "main_dttm_col":           MAIN_DTTM[key],
         "description":             None,
         "offset":                  0,
-        "cache_timeout":           None,
+        "cache_timeout":           0,
         "catalog":                 None,
         "schema":                  "thelook_dw",
         "sql":                     None,
         "params":                  None,
         "template_params":         None,
         "filter_select_enabled":   True,
-        "fetch_values_predicate":  None,
+        "fetch_values_predicate":  f"{MAIN_DTTM[key]} >= NOW() - INTERVAL 30 DAY" if MAIN_DTTM[key] else None,
         "extra":                   None,
         "normalize_columns":       False,
         "always_filter_main_dttm": False,
@@ -273,14 +273,14 @@ def line_chart(slice_name, uuid_, ds_key, x_axis, metrics, time_col, time_range,
             "zoomable":         True,
             "show_value":       False,
             "markerEnabled":    False,
-            "row_limit":        50000,
+            "row_limit":        5000,
             "order_desc":       True,
             "rich_tooltip":     True,
         },
     }
 
 
-def bar_chart(slice_name, uuid_, ds_key, x_axis, metrics, time_col, time_range,
+def bar_chart(slice_name, uuid_, ds_key, x_axis, metrics, time_col=None, time_range=None,
               groupby=None, is_horizontal=False, is_stacked=False, force_cat=True):
     return {
         "slice_name":  slice_name,
@@ -295,7 +295,7 @@ def bar_chart(slice_name, uuid_, ds_key, x_axis, metrics, time_col, time_range,
             "x_axis_sort_asc":       True,
             "metrics":               metrics,
             "groupby":               groupby or [],
-            "adhoc_filters":         [adhoc_filter(time_col, time_range)],
+            "adhoc_filters":         ([adhoc_filter(time_col, time_range)] if time_col else []),
             "orientation":           "horizontal" if is_horizontal else "vertical",
             "stack":                 "Stack" if is_stacked else None,
             "show_legend":           True,
@@ -303,7 +303,7 @@ def bar_chart(slice_name, uuid_, ds_key, x_axis, metrics, time_col, time_range,
             "y_axis_format":         "SMART_NUMBER",
             "series_limit":          20,
             "order_desc":            True,
-            "row_limit":             10000,
+            "row_limit":             5000,
             "rich_tooltip":          True,
         },
     }
@@ -331,7 +331,7 @@ def pie_chart(slice_name, uuid_, ds_key, groupby, metric, time_col, time_range, 
     }
 
 
-def table_chart(slice_name, uuid_, ds_key, groupby, metrics, time_col, time_range):
+def table_chart(slice_name, uuid_, ds_key, groupby, metrics, time_col=None, time_range=None):
     return {
         "slice_name":  slice_name,
         "viz_type":    "table",
@@ -341,13 +341,52 @@ def table_chart(slice_name, uuid_, ds_key, groupby, metrics, time_col, time_rang
             "viz_type":         "table",
             "groupby":          groupby,
             "metrics":          metrics,
-            "adhoc_filters":    [adhoc_filter(time_col, time_range)],
+            "adhoc_filters":    ([adhoc_filter(time_col, time_range)] if time_col else []),
             "page_length":      10,
             "include_search":   True,
             "show_cell_bars":   True,
             "order_desc":       True,
             "row_limit":        50,
             "table_timestamp_format": "smart_date",
+        },
+    }
+
+
+def treemap_chart(slice_name, uuid_, ds_key, groupby, metric, time_col=None, time_range=None):
+    return {
+        "slice_name":   slice_name,
+        "viz_type":     "treemap_v2",
+        "uuid":         uuid_,
+        "dataset_uuid": DS[ds_key],
+        "params": {
+            "viz_type":      "treemap_v2",
+            "groupby":       groupby if isinstance(groupby, list) else [groupby],
+            "metric":        metric,
+            "adhoc_filters": ([adhoc_filter(time_col, time_range)] if time_col else []),
+            "row_limit":     1000,
+            "number_format": "SMART_NUMBER",
+            "label_type":    "key_value",
+            "show_labels":   True,
+        },
+    }
+
+
+def funnel_chart(slice_name, uuid_, ds_key, groupby, metric, time_col=None, time_range=None):
+    return {
+        "slice_name":   slice_name,
+        "viz_type":     "funnel",
+        "uuid":         uuid_,
+        "dataset_uuid": DS[ds_key],
+        "params": {
+            "viz_type":       "funnel",
+            "groupby":        groupby if isinstance(groupby, list) else [groupby],
+            "metric":         metric,
+            "adhoc_filters":  ([adhoc_filter(time_col, time_range)] if time_col else []),
+            "row_limit":      20,
+            "sort_by_metric": True,
+            "label_type":     "key_percent",
+            "show_labels":    True,
+            "show_legend":    False,
         },
     }
 
@@ -437,7 +476,7 @@ def main():
     save_yaml({
         "database_name": "Doris",
         "sqlalchemy_uri": "mysql+pymysql://root@doris-fe:9030/thelook_dw",
-        "cache_timeout":  None,
+        "cache_timeout":  0,
         "expose_in_sqllab": True,
         "allow_run_async":  False,
         "allow_ctas": False,
@@ -482,6 +521,12 @@ def main():
         "Unique Customers", "aa000001-0001-0001-0001-000000000004",
         "sales_flat", metric_sql("COUNT(DISTINCT user_id)", "Customers"),
         "order_item_created_at", SALES_RANGE,
+    )
+    kpi_aov = big_number(
+        "Avg Order Value", "aa000001-0001-0001-0001-000000000011",
+        "sales_flat",
+        metric_sql("SUM(sale_price) / NULLIF(COUNT(DISTINCT order_id), 0)", "AOV"),
+        "order_item_created_at", SALES_RANGE, ",.2f",
     )
 
     # Revenue trend (monthly)
@@ -530,7 +575,7 @@ def main():
         "order_item_created_at", SALES_RANGE,
     )
 
-    # Top products table
+    # Top products table (product_perf has no time column – no filter needed)
     top_products = table_chart(
         "Top Products by Revenue", "aa000001-0001-0001-0001-000000000010",
         "product_perf", ["product_name", "product_category", "product_brand"],
@@ -539,10 +584,7 @@ def main():
             metric_simple("net_items_sold", "SUM", "Items Sold", "BIGINT"),
             metric_simple("return_rate",   "AVG", "Return Rate %"),
         ],
-        "product_id", "No filter",  # product_perf has no time col
     )
-    # product_perf has no time filter - override adhoc_filters to empty
-    top_products["params"]["adhoc_filters"] = []
 
     # TAB 2 · Clickstream 
     kpi_sessions = big_number(
@@ -559,6 +601,15 @@ def main():
         "Sessions with Purchase", "bb000002-0002-0002-0002-000000000003",
         "clk_sessions", metric_sql("SUM(purchase_count)", "Purchases"),
         "session_start", CLICK_RANGE,
+    )
+    kpi_conversion = big_number(
+        "Session Conversion Rate (%)", "bb000002-0002-0002-0002-000000000009",
+        "clk_sessions",
+        metric_sql(
+            "ROUND(SUM(purchase_count) * 100.0 / NULLIF(COUNT(DISTINCT session_id), 0), 2)",
+            "Conversion %",
+        ),
+        "session_start", CLICK_RANGE, ",.2f",
     )
 
     # Events by type bar
@@ -597,12 +648,12 @@ def main():
     events_trend["params"]["time_grain_sqla"] = "P1D"
     events_trend["params"]["xAxisForceCategorical"] = False
 
-    # Conversion funnel table
+    # Conversion funnel table (Sessions → Viewed → Cart → Purchased by category)
     funnel_table = table_chart(
         "Conversion Funnel (Sessions)", "bb000002-0002-0002-0002-000000000008",
         "clk_sessions", ["top_category"],
         [
-            metric_sql("COUNT(DISTINCT session_id)",                  "Sessions"),
+            metric_sql("COUNT(DISTINCT session_id)",                      "Sessions"),
             metric_sql("SUM(CASE WHEN saw_product    THEN 1 ELSE 0 END)", "Viewed Product"),
             metric_sql("SUM(CASE WHEN added_to_cart  THEN 1 ELSE 0 END)", "Added to Cart"),
             metric_sql("SUM(CASE WHEN purchased      THEN 1 ELSE 0 END)", "Purchased"),
@@ -610,15 +661,24 @@ def main():
         "session_start", CLICK_RANGE,
     )
 
-    # Save charts 
+    # Revenue treemap by department & category (replaces bar chart)
+    cat_treemap = treemap_chart(
+        "Revenue by Department & Category", "aa000001-0001-0001-0001-000000000012",
+        "sales_hourly", ["product_department", "product_category"],
+        metric_simple("total_revenue", "SUM", "Revenue"),
+        "order_hour", SALES_RANGE,
+    )
+
+    # Save charts
     all_charts = [
         # tab1
-        kpi_revenue, kpi_orders, kpi_profit, kpi_customers,
+        kpi_revenue, kpi_orders, kpi_profit, kpi_customers, kpi_aov,
         revenue_trend, order_status_pie,
         cat_revenue_bar, country_bar,
-        gender_pie, top_products,
+        gender_pie, top_products, cat_treemap,
         # tab2
         kpi_sessions, kpi_events, kpi_purchases,
+        kpi_conversion,
         event_type_bar, traffic_pie,
         browser_bar, events_trend, funnel_table,
     ]
@@ -649,14 +709,15 @@ def main():
             "children": [T1, T2],
             "parents": ["ROOT_ID", "GRID_ID"],
         },
-        # Tab 1 
-        T1: tab_node(T1, "Sales Overview", ["ROW-t1-kpi", "ROW-t1-trend", "ROW-t1-cat", "ROW-t1-prod"]),
+        # Tab 1
+        T1: tab_node(T1, "Sales Overview", ["ROW-t1-kpi", "ROW-t1-trend", "ROW-t1-cat", "ROW-t1-conv", "ROW-t1-prod"]),
         "ROW-t1-kpi": row_node("ROW-t1-kpi",
-            [cid(kpi_revenue), cid(kpi_orders), cid(kpi_profit), cid(kpi_customers)], T1),
+            [cid(kpi_revenue), cid(kpi_orders), cid(kpi_profit), cid(kpi_customers), cid(kpi_aov)], T1),
         cid(kpi_revenue):   chart_node(cid(kpi_revenue),   kpi_revenue["uuid"],   kpi_revenue["slice_name"],   "ROW-t1-kpi", T1, 3, 25),
-        cid(kpi_orders):    chart_node(cid(kpi_orders),    kpi_orders["uuid"],    kpi_orders["slice_name"],    "ROW-t1-kpi", T1, 3, 25),
+        cid(kpi_orders):    chart_node(cid(kpi_orders),    kpi_orders["uuid"],    kpi_orders["slice_name"],    "ROW-t1-kpi", T1, 2, 25),
         cid(kpi_profit):    chart_node(cid(kpi_profit),    kpi_profit["uuid"],    kpi_profit["slice_name"],    "ROW-t1-kpi", T1, 3, 25),
-        cid(kpi_customers): chart_node(cid(kpi_customers), kpi_customers["uuid"], kpi_customers["slice_name"], "ROW-t1-kpi", T1, 3, 25),
+        cid(kpi_customers): chart_node(cid(kpi_customers), kpi_customers["uuid"], kpi_customers["slice_name"], "ROW-t1-kpi", T1, 2, 25),
+        cid(kpi_aov):       chart_node(cid(kpi_aov),       kpi_aov["uuid"],       kpi_aov["slice_name"],       "ROW-t1-kpi", T1, 2, 25),
 
         "ROW-t1-trend": row_node("ROW-t1-trend",
             [cid(revenue_trend), cid(order_status_pie)], T1),
@@ -669,17 +730,22 @@ def main():
         cid(country_bar):     chart_node(cid(country_bar),     country_bar["uuid"],     country_bar["slice_name"],     "ROW-t1-cat", T1, 4, 60),
         cid(gender_pie):      chart_node(cid(gender_pie),      gender_pie["uuid"],      gender_pie["slice_name"],      "ROW-t1-cat", T1, 3, 60),
 
+        "ROW-t1-conv": row_node("ROW-t1-conv",
+            [cid(cat_treemap)], T1),
+        cid(cat_treemap): chart_node(cid(cat_treemap), cat_treemap["uuid"], cat_treemap["slice_name"], "ROW-t1-conv", T1, 12, 70),
+
         "ROW-t1-prod": row_node("ROW-t1-prod",
             [cid(top_products)], T1),
         cid(top_products): chart_node(cid(top_products), top_products["uuid"], top_products["slice_name"], "ROW-t1-prod", T1, 12, 80),
 
-        # Tab 2 
+        # Tab 2
         T2: tab_node(T2, "Clickstream", ["ROW-t2-kpi", "ROW-t2-mid", "ROW-t2-bot"]),
         "ROW-t2-kpi": row_node("ROW-t2-kpi",
-            [cid(kpi_sessions), cid(kpi_events), cid(kpi_purchases)], T2),
-        cid(kpi_sessions):  chart_node(cid(kpi_sessions),  kpi_sessions["uuid"],  kpi_sessions["slice_name"],  "ROW-t2-kpi", T2, 4, 25),
-        cid(kpi_events):    chart_node(cid(kpi_events),    kpi_events["uuid"],    kpi_events["slice_name"],    "ROW-t2-kpi", T2, 4, 25),
-        cid(kpi_purchases): chart_node(cid(kpi_purchases), kpi_purchases["uuid"], kpi_purchases["slice_name"], "ROW-t2-kpi", T2, 4, 25),
+            [cid(kpi_sessions), cid(kpi_events), cid(kpi_purchases), cid(kpi_conversion)], T2),
+        cid(kpi_sessions):   chart_node(cid(kpi_sessions),   kpi_sessions["uuid"],   kpi_sessions["slice_name"],   "ROW-t2-kpi", T2, 3, 25),
+        cid(kpi_events):     chart_node(cid(kpi_events),     kpi_events["uuid"],     kpi_events["slice_name"],     "ROW-t2-kpi", T2, 3, 25),
+        cid(kpi_purchases):  chart_node(cid(kpi_purchases),  kpi_purchases["uuid"],  kpi_purchases["slice_name"],  "ROW-t2-kpi", T2, 3, 25),
+        cid(kpi_conversion): chart_node(cid(kpi_conversion), kpi_conversion["uuid"], kpi_conversion["slice_name"], "ROW-t2-kpi", T2, 3, 25),
 
         "ROW-t2-mid": row_node("ROW-t2-mid",
             [cid(events_trend), cid(traffic_pie)], T2),
@@ -688,9 +754,9 @@ def main():
 
         "ROW-t2-bot": row_node("ROW-t2-bot",
             [cid(event_type_bar), cid(browser_bar), cid(funnel_table)], T2),
-        cid(event_type_bar): chart_node(cid(event_type_bar), event_type_bar["uuid"], event_type_bar["slice_name"], "ROW-t2-bot", T2, 4, 65),
-        cid(browser_bar):    chart_node(cid(browser_bar),    browser_bar["uuid"],    browser_bar["slice_name"],    "ROW-t2-bot", T2, 3, 65),
-        cid(funnel_table):   chart_node(cid(funnel_table),   funnel_table["uuid"],   funnel_table["slice_name"],   "ROW-t2-bot", T2, 5, 65),
+        cid(event_type_bar):  chart_node(cid(event_type_bar),  event_type_bar["uuid"],  event_type_bar["slice_name"],  "ROW-t2-bot", T2, 4, 65),
+        cid(browser_bar):     chart_node(cid(browser_bar),     browser_bar["uuid"],     browser_bar["slice_name"],     "ROW-t2-bot", T2, 3, 65),
+        cid(funnel_table):    chart_node(cid(funnel_table),    funnel_table["uuid"],    funnel_table["slice_name"],    "ROW-t2-bot", T2, 5, 65),
     }
 
     # Native time-range filters 
@@ -762,8 +828,8 @@ def main():
                 "scope":         {"rootPath": ["ROOT_ID"], "excluded": []},
                 "chartsInScope": [],
             },
-            "color_scheme":         "bnbColors",
-            "refresh_frequency":    0,
+            "color_scheme":         "supersetColors",
+            "refresh_frequency":    60,
             "expanded_slices":      {},
             "timed_refresh_immune_slices": [],
             "cross_filters_enabled": True,
@@ -808,13 +874,14 @@ def main():
         csrf.raise_for_status()
         csrf_token = csrf.json()["result"]
 
-        import_res = session.post(
-            f"{SUPERSET_URL}/api/v1/assets/import",
-            headers={"Authorization": f"Bearer {token}", "X-CSRFToken": csrf_token},
-            files={"bundle": ("dashboard_assets.zip", open(zip_file, "rb"), "application/zip")},
-            data={"passwords": json.dumps({"databases/Doris.yaml": ""}), "overwrite": "true"},
-            timeout=60,
-        )
+        with open(zip_file, "rb") as zf_upload:
+            import_res = session.post(
+                f"{SUPERSET_URL}/api/v1/assets/import",
+                headers={"Authorization": f"Bearer {token}", "X-CSRFToken": csrf_token},
+                files={"bundle": ("dashboard_assets.zip", zf_upload, "application/zip")},
+                data={"passwords": json.dumps({"databases/Doris.yaml": ""}), "overwrite": "true"},
+                timeout=60,
+            )
 
         if import_res.status_code == 200:
             print("\n[OK] DASHBOARD IMPORTED SUCCESSFULLY!")

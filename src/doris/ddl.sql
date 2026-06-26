@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS dwd_clickstream_events (
 ) ENGINE=OLAP
 DUPLICATE KEY(event_id, event_timestamp)
 PARTITION BY RANGE(event_date) ()
-DISTRIBUTED BY HASH(session_id) BUCKETS 10
+DISTRIBUTED BY HASH(session_id, event_id) BUCKETS 10
 PROPERTIES (
     "replication_num" = "1",
     "dynamic_partition.enable" = "true",
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS dim_users (
     updated_at DATETIME
 ) ENGINE=OLAP
 UNIQUE KEY(user_id)
-DISTRIBUTED BY HASH(user_id) BUCKETS 10
+DISTRIBUTED BY HASH(user_id) BUCKETS 3
 PROPERTIES (
     "replication_num" = "1"
 );
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS dim_products (
     distribution_center_id BIGINT
 ) ENGINE=OLAP
 UNIQUE KEY(product_id)
-DISTRIBUTED BY HASH(product_id) BUCKETS 10
+DISTRIBUTED BY HASH(product_id) BUCKETS 1
 PROPERTIES (
     "replication_num" = "1"
 );
@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS dim_distribution_centers (
     longitude DOUBLE
 ) ENGINE=OLAP
 UNIQUE KEY(id)
-DISTRIBUTED BY HASH(id) BUCKETS 2
+DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES (
     "replication_num" = "1"
 );
@@ -123,13 +123,14 @@ CREATE TABLE IF NOT EXISTS fact_orders (
 UNIQUE KEY(order_id)
 DISTRIBUTED BY HASH(order_id) BUCKETS 10
 PROPERTIES (
-    "replication_num" = "1"
+    "replication_num" = "1",
+    "colocate_with" = "orders_group"
 );
 
 -- 7. FACT Order Items Table
 CREATE TABLE IF NOT EXISTS fact_order_items (
-    id BIGINT,
     order_id BIGINT,
+    id BIGINT,
     user_id BIGINT,
     product_id BIGINT,
     inventory_item_id BIGINT,
@@ -141,10 +142,11 @@ CREATE TABLE IF NOT EXISTS fact_order_items (
     returned_at DATETIME,
     sale_price DOUBLE
 ) ENGINE=OLAP
-UNIQUE KEY(id)
-DISTRIBUTED BY HASH(id) BUCKETS 10
+UNIQUE KEY(order_id, id)
+DISTRIBUTED BY HASH(order_id) BUCKETS 10
 PROPERTIES (
-    "replication_num" = "1"
+    "replication_num" = "1",
+    "colocate_with" = "orders_group"
 );
 
 -- 8. FACT Inventory Items Table
